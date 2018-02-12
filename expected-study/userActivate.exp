@@ -1,0 +1,13 @@
+#!/usr/bin/expect 
+
+set username [lindex $argv 0]
+
+spawn mysql -uroot -pp@s\#0fSPV
+
+expect ">"
+send "update pvault.union_user set statusID=4 where username=\"$username\";\r"
+expect ">"
+send "update pvault.union_user set password=\"C68AC63173FCFC537BF22F19A425977029D7DD35DDC5D76B36E58AF222DFDA39\" where username=\"$username\";\r"
+expect ">"
+send "exit\r"
+expect eof
