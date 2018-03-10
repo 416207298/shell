@@ -5,17 +5,27 @@ set ai
 let Tlist_Exit_OnlyWindow=1
 let Tlist_Use_Right_Window=1
 let Tlist_File_Fold_Auto_Close=1
+" F6开启/关闭左侧树形目录
+map <silent> <F6> :NERDTreeToggle<cr>
+" F7开启/关闭paste模式
+map <silent> <F7> :set paste!<cr>
+" F8显示/取消行号
+nnoremap <silent> <F8> :set nu!<CR>
+" F9显示/关闭Tlist
 map <silent> <F9> :TlistToggle<cr>
 let Tlist_Auto_Open=1
 set showmatch
 set smartindent
+set ignorecase
+set hlsearch
+" set mouse=a
 
 autocmd InsertLeave * se nocul
 autocmd InsertEnter * se cul
 syntax enable
 syntax on
 
-set tags=/root/trunk/tags
+set tags=/root/gitlearn/trunk/tags
 map <c-]> g<c-]>
 set autochdir
 
@@ -95,6 +105,21 @@ filetype plugin indent on    " required
 colorscheme monokai
  
 let g:ycm_global_ycm_extra_conf='~/.vim/bundle/YouCompleteMe/third_party/ycmd/cpp/ycm/.ycm_extra_conf.py'
+
+" 1秒后关闭结构体提示预览窗
+let g:ycm_autoclose_preview_window_after_insertion = 1
+let g:ycm_autoclose_preview_window_after_completion = 1
+" 关闭YCM语法检查
+let g:ycm_enable_diagnostic_signs = 0
+let g:ycm_enable_diagnostic_highlighting = 0
+
 set backspace=2
 " 光标停留上一次打开位置
 au BufReadPost * if line("'\"") > 0|if line("'\"") <= line("$")|exe("norm '\"")|else|exe "norm $"|endif|endif
+
+if has("multi_byte")
+    set fileencodings=utf-8,ucs-bom,cp936,cp1250,big5,euc-jp,euc-kr,latin1
+else
+    echoerr "Sorry, this version of (g)vim was not compiled with multi_byte"
+endif
+

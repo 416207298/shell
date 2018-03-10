@@ -22,6 +22,7 @@
 #include "UnionIPC.h"
 #include "unionenc.h"
 #include "unioncommonser.h"
+#define TEST 1
 #define DBNAME "pvault"
 #define UNION_ACC_ERROR 1
 #define UNION_GENPWD_ERR 2
@@ -197,6 +198,7 @@ static long long  InsertHisPwd(long long int hisid, const int accid, const char 
 	return hisid;
 }
 
+/* added by luhg */
 static long long  InsertHisKey(long long int hisid, const int accid, const char *tempSecretKey, const int result, const int trust = -1)
 {
 	char sql[6000];
@@ -984,12 +986,12 @@ static int DoReset(const char *ip, const char *type, const char *script,
 				printf("reset pwdsql[%s]\n", sql);
 			}
 		}
+		UnionLogDebugEx("mainten.log", "flag = %d", flag);
 		return flag;
 	}
 
-	
-
-	else  // 密钥账户
+	/* added by luhg */
+	else  // 密钥账户 
 	{
 		UnionLogDebugEx("mainten.log","%s","execute Authorized keys update!!!!!!");
 		int flag = 0;
@@ -998,13 +1000,17 @@ static int DoReset(const char *ip, const char *type, const char *script,
         char cmd[100];
         char **result;
         char spv_ip[50]; // 当前SPV的ip	
+		int pid = getpid();
+		char newPubName[32]; // 存放新公钥的名字(即时间戳+pid）
 
+		
 		
 		// 执行脚本，根据时间戳生成一对新密钥
 		time_t now = 0;
 		time(&now);
+		sprintf(newPubName, "%ld%c%d", now, '_', pid);
 		memset(cmd,0,100);
-		sprintf(cmd,"%s %ld","/home/spv/bin/pwdReset/genNewKey.sh ",now);
+		sprintf(cmd,"%s %s","/home/spv/bin/pwdReset/genNewKey.sh ", newPubName);
 		system(cmd);
 	
 		// 把公钥名和私钥value插入到authSecretKey表中
@@ -1014,10 +1020,10 @@ static int DoReset(const char *ip, const char *type, const char *script,
 		int row = 0, col = 0;
 		long long authSecretKeyId = 0; // 新密钥的ID
 		char *authSecretKeyPath = (char *)calloc(1, 128); // 存放新密钥的路径
-		long int newPubName; // 存放新公钥的名字(即时间戳）
-		char oldPubName[32]; // 旧公钥名字(时间戳)
+		char oldPubName[64]; // 旧公钥名字(时间戳+进程号)
 
-		sprintf(authSecretKeyPath,"%s%ld","/root/.ssh/id_rsa",now);
+
+		sprintf(authSecretKeyPath,"%s%s","/root/.ssh/id_rsa", newPubName);
 		f = open(authSecretKeyPath, O_RDWR);
 		if (f)
 		{
@@ -1028,9 +1034,8 @@ static int DoReset(const char *ip, const char *type, const char *script,
 			UnionDBInsertEx(sql, &row, &errmsg, &authSecretKeyId); 
 			
 		}
-		newPubName = now;	
 		memset(sql,0,1024);
-		sprintf(sql,"update authSecretKey set pubKeyName='%ld' where id=%lld ", newPubName, authSecretKeyId);
+		sprintf(sql,"update authSecretKey set pubKeyName='%s' where id=%lld ", newPubName, authSecretKeyId);
 		UnionLogDebugEx("AccMananger.log", "sql=[%s]", sql);
 		errmsg = NULL;
 		UnionDBUpdate(sql, &row, &errmsg);
@@ -1052,51 +1057,83 @@ static int DoReset(const char *ip, const char *type, const char *script,
 		GetLocalIP(spv_ip); 
 		UnionLogDebugEx("mainten.log", "SPV's IP = %s", spv_ip);	
 		
-		// 把root密码解密
+		// 把管理员root密码解密
 		unsigned char *rootPwd = (unsigned char *)pwd;
 		unsigned char clearpwd[100] = {0};
+		char clearpwd_with_mark[100] = {0};
 		int pwdlen = 0;
 		UnionPswdDecrypt(rootPwd, strlen(pwd), clearpwd, 1000, &pwdlen);
-		UnionLogDebugEx("mainten.log", "rootPwd=%s", clearpwd);
+		sprintf(clearpwd_with_mark, "%c%s%c", '"', clearpwd, '"');
+		UnionLogDebugEx("mainten.log", "rootPwd=%s", clearpwd_with_mark);
 
 		// 执行脚本更新公钥
 		memset(cmd, 0, 100);
-		sprintf(cmd, "/home/spv/bin/pwdReset/newChAuthKey.sh %s %s %s %ld %s %s", attr[0].name, ip, oldPubName, 
-					newPubName, spv_ip, clearpwd);
+		sprintf(cmd, "/home/spv/bin/pwdReset/newChAuthKey.sh %s %s %s %s %s %s", attr[0].name, ip, oldPubName, 
+					newPubName, spv_ip, clearpwd_with_mark);
 		UnionLogDebugEx("mainten.log","cmd = %s",cmd);
-		flag = UnionSystem(cmd);
+		flag = system(cmd);
 		flag = WEXITSTATUS(flag);
-		UnionLogDebugEx("mainten.log", "flag = %d", flag);
-
+		UnionLogDebugEx("mainten.log", "Exe_flag = %d", flag);
 		if (flag != 0)
 		{
+			flag = ACCMAN_ALL_FAIL;
 			attr[0].errno = flag;
 		}
+		UnionLogDebugEx("mainten.log", "attr[0].errno = %d", attr[0].errno);
 
-		memset(sql,0,1024);
+		memset(sql, 0, 1024);
 		UnionDBPrintf(sql, sizeof(sql),
 				"UPDATE worknote_account set errno=%d,operateTime='%ld' WHERE "
 				"worknote='%s' AND operSN='%s' AND accountID=%d"
-				,attr[i].errno, time(NULL), worknote,sn,attr[0].id);
+				,attr[0].errno, time(NULL), worknote,sn,attr[0].id);
 		UnionDBUpdate(sql, &row, &errmsg);
-		//改密后写入更新状态
+		//改密后写入历史表更新状态
 		hispwdid = InsertHisKey(hispwdid, attr[0].id, buf, flag);
-		UnionLogDebugEx("mainten.log", "attr[0].errno=%d", attr[0].errno);
+		
+		int check_flag = 0;
+		if (flag != 0)//改密失败后，重新进行校验                                                                         
+        {   
+            memset(cmd, 0, 100);
+            sprintf(cmd, "/home/spv/bin/chAuthKey/check.exp %s %s %s", attr[0].name, ip, oldPubName);  
+            UnionLogDebugEx("mainten.log", "cmd = %s", cmd);  
+            check_flag = system(cmd);
+            if (attr[0].msg){
+                strcat(attr[0].msg, T("改密失败")); 
+                printf("attr[0].msg[%s]\n", attr[0].msg); 
+			}
+        }                                                                                                                
+        else                                                                  
+        {    
+            if (attr[0].msg) 
+            {    
+                strcat(attr[0].msg, T("改密成功"));
+                printf("attr[0].msg[%s]\n", attr[0].msg); 
+            }                                                                                                            
+        } 
+
+		UnionLogDebugEx("mainten.log", "check_flag = %d", check_flag);
+		int status = check_flag == 0? 4:3;
+
+		// 把账户改密状态写表
 		if (attr[0].errno == 0)
 		{
 			memset(sql,0,1024);
 			UnionDBPrintf(sql, sizeof(sql),
 				"update account set authSecretKeyID='%lld',pwdTime='%ld', curStatusID=%d where id=%d",
-				authSecretKeyId,time(NULL),4,attr[0].id);
+				authSecretKeyId, time(NULL), status, attr[0].id);
 			UnionDBUpdate(sql, &row, &errmsg);	
 		}
 		else
 		{
+			memset(sql,0,1024);
 			UnionDBPrintf(sql, sizeof(sql),
-				"update account set curStatusID=%d where id=%d",
-				3,attr[0].id);
+				"update account set curStatusID=%d where id=%d", status, attr[0].id);
+			UnionDBUpdate(sql, &row, &errmsg);
 		}
+		free(authSecretKeyPath);
+		UnionLogDebugEx("mainten.log", "flag = %d", flag);
 		return flag;
+		/* End added by luhg */
 	}
 }
 static int GetNameByNoLogin(char **loginname, char **loginpass, char **loginkey, int devid)
@@ -1126,7 +1163,7 @@ static int GetNameByNoLogin(char **loginname, char **loginpass, char **loginkey,
 	}
 	return 0;
 }
-char* ReadSpeacialLine(const char* filename, int whichLine)  
+char* ReadSpeacialLine(const char* filename, int whichLine)  // added by luhg
 {  
     if (whichLine < 0 || NULL == filename)  
     {  
@@ -1157,7 +1194,7 @@ char* ReadSpeacialLine(const char* filename, int whichLine)
     return 0 == reachWhichLine ? NULL : data;  
 }  
 
-void GetLocalIP(char *IP) 
+void GetLocalIP(char *IP)  // added by luhg
 {
     char *ip = (char *)calloc(1, 50); 
     char *cmd = (char *)calloc(1,128);
@@ -1168,6 +1205,30 @@ void GetLocalIP(char *IP)
     system("rm -f /home/spv/log/IP.txt");
     free(cmd);
     free(ip);
+}
+
+int power(int num, int powNum) // added by luhg
+{   
+    int n = 1; 
+    int result = 1;
+    while(n<=powNum){
+        result *= num; 
+        n++; 
+    }
+    return result;  
+}
+
+int GenerateRandomNum()
+{
+	int randomNum = 0;
+	int tem = 0;
+	int n;
+	srand(time(0));
+	for(n=0; n<4; n++){
+		tem = rand() % 10;
+		randomNum += tem * power(10, n);
+	}
+	return randomNum;
 }
 
 static int DoChange(const char *script)
@@ -1272,35 +1333,46 @@ static int DoChange(const char *script)
 		}
 		return flag;
 	}
+	/* added by luhg */
 	else  // 密钥型
 	{
 		UnionLogDebugEx("chpwd.log","keyid=%s",g_accinfo.keyid);
 		int nrow, flag;
 		char sql[5000];
+		int row = 0, col = 0;
+		char *errmsg = NULL; 
 		int hispwdid = 0;
 		char cmd[100];
 		char **result, *msg;
 		char spv_ip[50]; // 当前SPV的ip
+		int pid = getpid();
+		char newPubName[50]; // 存放新公钥的名字(即时间戳+pid）
+		int authKeyLen;  // 生成密钥的长度: 2048, 4096
+
+
+		UnionDBPrintf(sql, 5000, "select authKeyLen from pwdpolicy");
+		UnionDBQuery(sql, &result, &row, &col, &errmsg);
+		authKeyLen = atoi(result[0]);
+		UnionLogDebugEx("chpwd.log", "authKeyLen = %d", authKeyLen);
 
 		// 执行脚本，根据时间戳生成一对新密钥
 		time_t now = 0;
 		time(&now);
+		sprintf(newPubName, "%ld%c%d", now, '_', pid);
 		memset(cmd,0,100);
-		sprintf(cmd,"%s %ld","/home/spv/bin/chAuthKey/genNewKey.sh ",now);
+		sprintf(cmd,"%s %s","/home/spv/bin/chAuthKey/genNewKey.sh ", newPubName);
+		UnionLogDebugEx("chpwd.log", "cmd=%s", cmd);
 		system(cmd);
 		
 		// 把公钥名和私钥value插入到authSecretKey表中
 		int f;
-		char *errmsg = NULL; 
 		char buf[5000] = {0};
-		int row = 0, col = 0;
 		char secretKey[5000] = {0};
 		long long authSecretKeyId = 0; // 新密钥的ID
 		char *authSecretKeyPath = (char *)calloc(1, 128); // 存放新密钥的路径
-		long int newPubName; // 存放新公钥的名字(即时间戳）
-		char oldPubName[32]; // 旧公钥名字(时间戳)
+		char oldPubName[64]; // 旧公钥名字(时间戳+pid)
 
-		sprintf(authSecretKeyPath,"%s%ld","/root/.ssh/id_rsa",now);
+		sprintf(authSecretKeyPath,"%s%s","/root/.ssh/id_rsa", newPubName);
 		UnionLogDebugEx("AccMananger.log","authSecretKeyPath=[%s]", authSecretKeyPath);
 		f = open(authSecretKeyPath, O_RDWR);
 		UnionLogDebugEx("AccMananger.log","f=%d", f);
@@ -1313,9 +1385,8 @@ static int DoChange(const char *script)
 			UnionDBInsertEx(sql, &row, &errmsg, &authSecretKeyId); 
 			
 		}
-		newPubName = now;	
 		memset(sql,0,1024);
-		sprintf(sql,"update authSecretKey set pubKeyName='%ld' where id=%lld ", newPubName, authSecretKeyId);
+		sprintf(sql,"update authSecretKey set pubKeyName='%s' where id=%lld ", newPubName, authSecretKeyId);
 		UnionLogDebugEx("AccMananger.log", "sql=[%s]", sql);
 		errmsg = NULL;
 		UnionDBUpdate(sql, &row, &errmsg);
@@ -1339,29 +1410,38 @@ static int DoChange(const char *script)
 		UnionLogDebugEx("chpwd.log", "SPV's IP = %s", spv_ip);
 
 		// 把旧私钥内容写入文件,用于执行脚本时登录服务器
-		char file[50];
-		memset(sql, 0, sizeof(sql));
-		sprintf(sql, "select value from account a,authSecretKey ak where a.id=%d and ak.id=a.authSecretKeyID;"
-					,g_accinfo.accid);
-		errmsg = NULL;
-		UnionDBQuery(sql, &result, &row, &col, &errmsg);
-		strcpy(secretKey, result[0]);
-		UnionLogDebugEx("chpwd.log", "secretKey = %s", secretKey);
-		sprintf(file, "/root/.ssh/id_rsa%s", oldPubName);
-		FILE *fp = fopen(file, "w");
-	    fprintf(fp, "%s", secretKey);
-    	fclose(fp);
-		memset(cmd, 0, 100);
-		sprintf(cmd, "chmod 600 %s", file);
-		system(cmd);
+#ifdef TEST
+		flag = 0;
+		sprintf(cmd, "%s %s", "/home/spv/bin/chAuthKey/ifSecretKeyExists.sh", oldPubName);
+		flag = system(cmd);
 
+		if (flag != 0){
+
+			char file[50];
+			memset(sql, 0, sizeof(sql));
+			sprintf(sql, "select value from account a,authSecretKey ak where a.id=%d and ak.id=a.authSecretKeyID;"
+						,g_accinfo.accid);
+			errmsg = NULL;
+			UnionDBQuery(sql, &result, &row, &col, &errmsg);
+			strcpy(secretKey, result[0]);
+			UnionLogDebugEx("chpwd.log", "\nsecretKey = %s", secretKey);
+			sprintf(file, "/root/.ssh/id_rsa%s", oldPubName);
+			FILE *fp = fopen(file, "w");
+	    	fprintf(fp, "%s", secretKey);
+    		fclose(fp);
+			memset(cmd, 0, 100);
+			sprintf(cmd, "chmod 600 %s", file);
+			system(cmd);
+
+		}
+#endif
 
 
 		// 执行脚本更新公钥
 		memset(cmd, 0, 100);
-		sprintf(cmd, "/home/spv/bin/chAuthKey/newChAuthKey.sh %s %s %s %ld %s", g_accinfo.account, g_devinfo.ip, oldPubName, newPubName, spv_ip);
+		sprintf(cmd, "/home/spv/bin/chAuthKey/newChAuthKey.sh %s %s %s %s %s", g_accinfo.account, g_devinfo.ip, oldPubName, newPubName, spv_ip);
 		UnionLogDebugEx("chpwd.log","cmd = %s",cmd);
-		flag = UnionSystem(cmd);
+		flag = system(cmd);
 		flag = WEXITSTATUS(flag);
 		//改密后写入更新状态
 		hispwdid = InsertHisKey(hispwdid, g_accinfo.accid, buf, flag);
@@ -1381,8 +1461,12 @@ static int DoChange(const char *script)
 		int status = flag == 0? 4:3;
         if (flag != 0)//改密失败后，重新进行校验
         {
-            int flag = CallSSH(g_devinfo.ip, "check", script, 
-                    g_accinfo.account,g_accinfo.pwd, g_accinfo.keyid, NULL, NULL, NULL, NULL);
+			memset(cmd, 0, 100);
+			sprintf(cmd, "/home/spv/bin/chAuthKey/check.exp %s %s %s", g_accinfo.account, g_devinfo.ip, oldPubName);
+			UnionLogDebugEx("chpwd.log", "cmd = %s", cmd);
+			flag = system(cmd);
+			flag = WEXITSTATUS(flag);
+			UnionLogDebugEx("chpwd.log", "check flag=%d", flag);
             if (flag == 0) status = 4; 
             if (g_accinfo.errmsg)
                 strcat(g_accinfo.errmsg, T("改密失败"));
@@ -1409,6 +1493,7 @@ static int DoChange(const char *script)
 		
 		free(authSecretKeyPath);
 		return flag;
+		/* End added by luhg */
 	}
 }
 static int DoCheck(char *script)
@@ -1546,62 +1631,59 @@ static int DoReg(char *script)
 		StatFail = 1;
 	}
 
-	
-	//mody by yusq 20171123 
+#if 1	
+	//mody by yusq 20180307 
 	//帐户注册license控制
-	//int Nrow=0,Ncol=0;
-	//char **NRes,*Nerrmsg, Nsql[1024]; 
-	//		
-	//查询注册当前帐户是否存在，存在时帐户状态为2或3或4
-	//UnionDBPrintf(Nsql, 1024, "select count(*) from account where id = %d AND (curStatusID = 2 OR curStatusID = 3 OR curStatusID = 4)",accid);
-	//UnionDBQuery(Nsql, &NRes, &Nrow, &Ncol, &Nerrmsg);
-	//
+	int Nrow=0,Ncol=0;
+	char **NRes,*Nerrmsg, Nsql[1024]; 
+	//查询注册当前帐户是否存在，存在时帐户状态为2或3或4或5
+	UnionDBPrintf(Nsql, 1024, "select count(*) from account where id = %d AND (curStatusID = 2 OR curStatusID = 3 OR curStatusID = 4 OR curStatusID = 5)",accid);
+	UnionDBQuery(Nsql, &NRes, &Nrow, &Ncol, &Nerrmsg);
 	//当前账户存在时，NTotal ！= 0
-	//int NTotal=atoi(NRes[0]);
-	//
-	//重复注册时的判断，当帐户状态为2或3或4时，跳过license验证
-	//if ( NTotal ==0 )
-	//{
-	//	int nret=0,inited=0,licensed=0,nnrow=0,nncol=0;
-	//	char **Res,*errmsg,nsql[1024];
-	//
-	//	nret = UnionCheckAuthStatus( &inited, &licensed );
-	//	if(nret)
-	//	{
-	//		//授权检测失败
-	//		return nret;
-	//	}
-	//	if (!licensed)
-	//	{
-	//		//系统未授权
-	//		return UNION_LICENSE_UNAUTHORIZED;
-	//	}
-	//	//struct UnionLicense  SKVLic;
-	//	memset(&SKVLic, 0, sizeof(SKVLic));
-	//	memset(&(SKVLic.SKVLicData), 0, sizeof(SKVLic.SKVLicData));
-	//	UnionReadLicInfo(&SKVLic , 0);
-  //
-	//	//认证成功、未认证、认证失败状态的帐户数不允许超过授权上限。
-	//	UnionDBPrintf(nsql, sizeof(nsql), "select count(*) from account where curStatusID = 2 OR curStatusID = 3 OR curStatusID = 4");
-	//	UnionDBQuery(nsql, &Res, &nnrow, &nncol, &errmsg);
-	//
-	//	int Total=atoi(Res[0]);
-	//	if(Total >= SKVLic.SKVLicData.KeysNum && SKVLic.SKVLicData.KeysNum != 0) 
-	//	{
-	//		//帐户达到License限制数
-	//		UnionDBPrintf(nsql, sizeof(nsql),
-	//			"update worknote_account set errno=%d,detailInfo='%s',operateTime=%ld WHERE id=%d",
-	//			UNION_OBJECT_NUM_OVER_LIMIT , "帐户达到License限制数", time(NULL),g_accinfo.waterid);
-	//			UnionDBUpdate(nsql, &nnrow, &errmsg);
-	//			
-	//		//帐户解锁
-	//		UNLockAccount(accid);
-	//	
-	//		return UNION_OBJECT_NUM_OVER_LIMIT;
-	//	}
-	//}
-	//end add
+	int NTotal=atoi(NRes[0]);
+	//重复注册时的判断，当帐户状态为2或3或4或5时，跳过license验证
+	if ( NTotal ==0 )
+	{
+		int nret=0,inited=0,licensed=0,nnrow=0,nncol=0;
+		char **Res,*errmsg,nsql[1024];
+	
+		nret = UnionCheckAuthStatus( &inited, &licensed );
+		if(nret)
+		{
+			//授权检测失败
+			return nret;
+		}
+		if (!licensed)
+		{
+			//系统未授权
+			return UNION_LICENSE_UNAUTHORIZED;
+		}
+		struct UnionLicense  SKVLic;
+		memset(&SKVLic, 0, sizeof(SKVLic));
+		memset(&(SKVLic.SKVLicData), 0, sizeof(SKVLic.SKVLicData));
+		UnionReadLicInfo(&SKVLic , 0);
+  
+		//认证成功、未认证、认证失败状态的帐户数不允许超过授权上限。
+		UnionDBPrintf(nsql, sizeof(nsql), "select count(*) from account where curStatusID = 2 OR curStatusID = 3 OR curStatusID = 4 OR curStatusID =5");
+		UnionDBQuery(nsql, &Res, &nnrow, &nncol, &errmsg);
+
+		int Total=atoi(Res[0]);
+		if(Total >= SKVLic.SKVLicData.KeysNum && SKVLic.SKVLicData.KeysNum != 0) 
+		{
+			//帐户达到License限制数
+			UnionDBPrintf(nsql, sizeof(nsql),
+				"update worknote_account set errno=%d,detailInfo='%s',operateTime=%ld WHERE id=%d",
+				UNION_OBJECT_NUM_OVER_LIMIT , "帐户达到License限制数", time(NULL),g_accinfo.waterid);
+				UnionDBUpdate(nsql, &nnrow, &errmsg);
+				
+			//帐户解锁
+			UNLockAccount(accid);
 		
+			return UNION_OBJECT_NUM_OVER_LIMIT;
+	  }
+	}
+#endif
+
 	//更新worknote_account
 	//更新帐户表
 	{
@@ -1689,6 +1771,7 @@ static int DoAdd(const char *ip, const char *type, const char *script,
 		SetOperByDevice(worknote, sn, T("没有管理/特权帐户"), devid, AccMap);
 		return UNION_ARGU_ERR;
 	}
+	/* Added by luhg */
 	int i;
 	UNION_ACC_ATTR *attr = AccMap;
 	char cmd[100] = {0};
@@ -1704,16 +1787,7 @@ static int DoAdd(const char *ip, const char *type, const char *script,
 		UnionDBPrintf(sql, sizeof(sql),
 				"SELECT a.name FROM account a, worknote_account w_a"
 				" WHERE  a.id='%d' AND w_a.accountID=a.id AND w_a.worknote='%s'"
-				" AND w_a.operSN='%s'", AccMap[i].id, worknote, sn
-				);
-
-		// 生成一对新密钥对
-		time_t now = 0;                                                                 
-        time(&now);                                                                  
-        memset(cmd,0,100); 
-        sprintf(cmd,"%s %ld","/home/spv/bin/pwdReset/genNewKey.sh ",now);
-		system(cmd);
-
+				" AND w_a.operSN='%s'", AccMap[i].id, worknote, sn);
 		char **result, *why;
 		int nrow, ncol;
 		flag = UnionDBQuery(sql, &result, &nrow, &ncol, &why);
@@ -1722,6 +1796,17 @@ static int DoAdd(const char *ip, const char *type, const char *script,
 			attr[i].name = strdup(result[0]);
 			UnionDBFree(result, nrow*ncol);
 		}
+
+		// 生成一对新密钥对
+        char newPubName[64]; // 存放新公钥的名字(即时间戳+pid）
+		time_t now = 0;                                                                 
+		int pid = getpid();
+        time(&now);                                                                  
+		sprintf(newPubName, "%ld%s%s%d", now, attr[i].name, "_", pid);
+        memset(cmd,0,100); 
+        sprintf(cmd,"%s %s","/home/spv/bin/pwdReset/genNewKey.sh ",newPubName);
+		system(cmd);
+
 		// 把公钥名和私钥value插入到authSecretKey表中
         int f;
         char *errmsg = NULL;
@@ -1729,11 +1814,10 @@ static int DoAdd(const char *ip, const char *type, const char *script,
         int row = 0;
         long long authSecretKeyId = 0; // 新密钥的ID
         char *authSecretKeyPath = (char *)calloc(1, 128); // 存放新密钥的路径
-        long int newPubName; // 存放新公钥的名字(即时间戳）
 		int hispwdid = 0;
 		char spv_ip[30] = {0};
 
-        sprintf(authSecretKeyPath,"%s%ld","/root/.ssh/id_rsa",now);
+        sprintf(authSecretKeyPath,"%s%s","/root/.ssh/id_rsa",newPubName);
         f = open(authSecretKeyPath, O_RDWR);
         if (f)
         {
@@ -1742,9 +1826,8 @@ static int DoAdd(const char *ip, const char *type, const char *script,
             UnionLogDebugEx("AccMananger.log","sql=[%s]", sql);
             UnionDBInsertEx(sql, &row, &errmsg, &authSecretKeyId);
         }
-        newPubName = now;
         memset(sql,0,1024);
-        sprintf(sql,"update authSecretKey set pubKeyName='%ld' where id=%lld ", newPubName, authSecretKeyId);
+        sprintf(sql,"update authSecretKey set pubKeyName='%s' where id=%lld ", newPubName, authSecretKeyId);
         UnionLogDebugEx("AccMananger.log", "sql=[%s]", sql);
         errmsg = NULL;
         UnionDBUpdate(sql, &row, &errmsg);
@@ -1759,16 +1842,18 @@ static int DoAdd(const char *ip, const char *type, const char *script,
         // 把root密码解密
         unsigned char *rootPwd = (unsigned char *)pwd;
         unsigned char clearpwd[100] = {0}; 
+		char clearpwd_with_mark[100] = {0};
         int pwdlen = 0; 
         UnionPswdDecrypt(rootPwd, strlen(pwd), clearpwd, 1000, &pwdlen);
-        UnionLogDebugEx("add.log", "rootPwd=%s", clearpwd);	
+		sprintf(clearpwd_with_mark, "%c%s%c", '"', clearpwd, '"');
+        UnionLogDebugEx("add.log", "rootPwd=%s", clearpwd_with_mark);	
 
 		// 执行脚本添加密钥型账户
 		memset(cmd, 0, 100);
-		sprintf(cmd, "%s %s %s %d %ld %s %s", "/home/spv/bin/addAuthUser/addAuthKeyUser.sh", 
-				attr[i].name, ip, 0, now, spv_ip, clearpwd);
+		sprintf(cmd, "%s %s %s %d %s %s %s", "/home/spv/bin/addAuthUser/addAuthKeyUser.sh", 
+				attr[i].name, ip, 0, newPubName, spv_ip, clearpwd_with_mark);
 		UnionLogDebugEx("add.log", "cmd=%s", cmd);	
-		flag = UnionSystem(cmd);
+		flag = system(cmd);
 		flag = WEXITSTATUS(flag);
 		UnionLogDebugEx("add.log", "flag = %d", flag);
 
@@ -1813,6 +1898,7 @@ static int DoAdd(const char *ip, const char *type, const char *script,
 	}
 	free(attr);
 	return flag;
+	/* End added by luhg */
 
 		//int i;
 	//UNION_ACC_ATTR *attr = AccMap;
@@ -2087,7 +2173,7 @@ static int DoList(const char *ip, const char *type, const char *script,
 		const char *name, char *pwd, const int devid, char *worknote, char *sn)
 {
 	printf("Call Do list\n");
-//	printf("SKVLic.SKVLicData.KeysNum = [%d]\n", SKVLic.SKVLicData.KeysNum);
+	printf("SKVLic.SKVLicData.KeysNum = [%d]\n", SKVLic.SKVLicData.KeysNum);
 	if (CheckListBusiness(devid) <= 0)
 	{
 		UpdateWorknoteResource(worknote, sn, devid, T("不支持的业务类型"));
@@ -2123,7 +2209,7 @@ static int DoList(const char *ip, const char *type, const char *script,
 				memset(buff, 0, sizeof(buff)))
 		{
 
-		//	int errinfo = 0;
+			int errinfo = 0;
 
 			while (strlen(buff) > 0 && 
 					(buff[strlen(buff)-1] == '\n'|| buff[strlen(buff)-1] == '\r')
@@ -2137,10 +2223,9 @@ static int DoList(const char *ip, const char *type, const char *script,
 			}
 			//帐户录入
 			UnionDelAccCompare(0, devid, buff);
-#if 0
 			char qsql[1024], **qset, *qerr;
 			int qrow, qcol, ret = 0;
-			UnionDBPrintf(qsql, sizeof(qsql), "select count(*) from pvault.account where curStatusID in (2,3,4)");
+			UnionDBPrintf(qsql, sizeof(qsql), "select count(*) from pvault.account where curStatusID in (2,3,4,5)");
 			if (UnionDBQuery(qsql, &qset, &qrow, &qcol, &qerr)) {
 				printf("db query failed:[%s]\n", qerr);
 				free(qerr);
@@ -2149,14 +2234,12 @@ static int DoList(const char *ip, const char *type, const char *script,
 						printf("qsql = [%s] ret = [%d]\n",qsql, ret);
 						UnionDBFree(qset, qrow * qcol);
 					}
-#endif
 			char sql[1024];
-//			if (ret < SKVLic.SKVLicData.KeysNum) {
+			if (ret < SKVLic.SKVLicData.KeysNum) {
 				UnionDBPrintf(sql, sizeof(sql), "INSERT INTO account"
 						"(name,protocolID,accountLevelID,curStatusID,deviceID) VALUES"
 						"('%s', 0, %d, 2, %d)"
 						,buff, level, devid);
-#if 0
 			} else {
 				UnionDBPrintf(sql, sizeof(sql), "INSERT INTO account"
 						"(name,protocolID,accountLevelID,curStatusID,deviceID) VALUES"
@@ -2165,18 +2248,17 @@ static int DoList(const char *ip, const char *type, const char *script,
 
 				errinfo = UNION_OBJECT_NUM_OVER_LIMIT;
 			}
-#endif
 			printf("sql = [%s]\n", sql);
 			char *msg;
-			int row,col,flag;
+			int row,col,flag; 
+			int source = 0;//source 1 帐户增加
 			long long id = 0;
 			if ((flag = UnionDBInsertEx(sql, &row, &msg, &id)) != 0 && msg)
 			{
 				printf("sql[%s]error[%s]\n", sql, msg);
 				free(msg);
 			}
-//			if ((flag == UNION_DB_UNIQUE_KEY_ERR) && (ret < SKVLic.SKVLicData.KeysNum))
-			if (flag == UNION_DB_UNIQUE_KEY_ERR)
+			if ((flag == UNION_DB_UNIQUE_KEY_ERR) && (ret < SKVLic.SKVLicData.KeysNum))
 			{
 				//只覆盖帐户状态为未注册、已注销
 				UnionDBPrintf(sql, sizeof(sql), "SELECT id,curStatusID FROM account WHERE "
@@ -2196,12 +2278,14 @@ static int DoList(const char *ip, const char *type, const char *script,
 						UnionDBUpdate(sql, &row, &msg);
 						//已注销的帐户，上收到后，也发送邮件
 						UnionAccLog(id, 0, 1, NULL);
+						source = 1;
 					}
 				}
 			}
 			else
 			{
 				UnionAccLog(id, 0, 1, NULL);
+				source = 1;
 			}
 			//把上收的帐户添入工单
 			if (id > 0)
@@ -2229,15 +2313,9 @@ static int DoList(const char *ip, const char *type, const char *script,
 				else
 				{
 					UnionDBPrintf(sql, sizeof(sql),
-							"INSERT INTO worknote_account(worknote,accountID,operateTime,operSN)"
-							" VALUES('%s', %lld, %ld,'%s')"
-							,worknote, id, time(NULL), sn);
-#if 0
-					UnionDBPrintf(sql, sizeof(sql),
 							"INSERT INTO worknote_account(worknote,accountID,operateTime,operSN, errno, detailInfo)"
 							" VALUES('%s', %lld, %ld,'%s', %d, '%s')"
 							,worknote, id, time(NULL), sn, errinfo, D(UnionGetErrDetail(errinfo)));
-#endif
 					printf("list w_a[%s]\n", sql);
 					flag = UnionDBInsert(sql, &row, &msg);
 				}
@@ -2907,7 +2985,6 @@ static int DevManage(char *worknote, char *sn, int devid)
 }
 int UnionLocalAccManage(char *worknote, char *sn)
 {
-#if 0
 	int inited, licensed;
 	int ret = UnionCheckAuthStatus(&inited, &licensed);
 	if(ret) {
@@ -2926,7 +3003,6 @@ int UnionLocalAccManage(char *worknote, char *sn)
 		printf("获取软件授权失败！\n");
 		return ret;
 		}
-#endif
 
 	if (worknote == NULL || sn == NULL)
 		return UNION_ARGU_ERR;

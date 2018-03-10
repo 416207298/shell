@@ -1,0 +1,18 @@
+#!/usr/bin/expect
+
+set username [lindex $argv 0]
+set IP [lindex $argv 1]
+set keyName [lindex $argv 2]
+set timeout 5
+
+spawn ssh -i /root/.ssh/id_rsa$keyName $username@$IP
+
+expect {
+	"*nter passphrase*" { exit 2 }
+	eof { exit 2 }
+	timeout { exit 2 }
+	"*(yes/no)?*" { send "yes\n";exp_continue }
+	"password" { exit 2 }
+	"*]*" { exit 0 }
+}
+expect eof

@@ -2,28 +2,29 @@
 
 # $1--user, $2--IP, $3--old_key_timeStamp, $4--new_key_timeStamp, $5---SPVIp
 
-spvRootPwd=" "
+spvRootPwd="62960909"
+spvPath="/home/spv/bin/chAuthKey"
 
 if [ $# -ne 5 ]; then                                                                                                         
     echo "Five arguments are needed." 
     echo "1. username   2. IP   3. old_key_timeStamp  4. new_key_timeStamp  5.SPVIp" 
     exit                                                                                                                      
 else 
-	spvPath="/root/gitlearn/final-chpwd"
-	./genNewKey.sh $4
 	expect <<- EOF
+	set timeout 10
 	spawn ssh -i /root/.ssh/id_rsa$3 $1@$2
-	expect "*]*"
-	send "cd ~/.ssh/\r"
+	expect {
+		"*password*" { send "\n"; exp_continue }
+		"*try again." { exit 2 }
+		"*]*" { send "cd ~/.ssh/\r" }
+		timeout { exit 2 }
+		eof { exit 2 }
+	}
 	expect "*]*"
 	send "scp root@$5:~/.ssh/id_rsa$4.pub .\r"
 	expect {
-		"*(yes/no)?*" {
-			send "yes\r"
-			expect "password"
-			send "$spvRootPwd\r"
-			}
-		"password" { send "$spvRootPwd\r" }
+		"*(yes/no)?*" { send "yes\r"; exp_continue }
+		"password"	{ send "$spvRootPwd\r" }
 	 }
 
 	expect "*]*"
@@ -33,10 +34,12 @@ else
 	expect "done."
 	send "exit\r"
 	expect eof
-
-
 	EOF
-
 fi
 
-$spvPath/Newclean.sh $3 $1 $2 $4 $5
+result=$?
+if [ $result -ne 0 ]; then
+	exit $result
+else	
+	$spvPath/Newclean.sh $3 $1 $2 $4 $5
+fi

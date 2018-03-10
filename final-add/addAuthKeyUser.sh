@@ -9,16 +9,21 @@ spvRootPwd="62960909"
 if [ $# -ne 6 ]; then                                                                                          
     echo "Six arguments are needed." 
     echo "1. username   2. IP   3. old_key_timeStamp  4. new_key_timeStamp  5.SPVIp   6.rootPwd"  
-    exit                                                                                                                     
+    exit 3                                                                                                                    
 else 
 	$spvPath/genNewKey.sh $4
 	expect <<- EOF
+	set timeout 8
 	spawn ssh root@$2
 	expect {
 		"*(yes/no)?*" { send "yes\r";exp_continue }
 		"password" { send "$6\r" }
 	 }
-	expect "*]*"
+	expect {
+		"*try again." { exit 2 }
+		timeout { exit 3 }
+		"*]*" { }
+	}
 	send "scp root@$5:$spvPath/ifUserExist.sh .\r"
 	expect {
         "*(yes/no)?*" { send -- "yes\r";exp_continue }
@@ -57,6 +62,14 @@ else
 	}
 	
 	EOF
+	result=$?
 
 fi
-rm -f /root/.ssh/id_rsa$4.pub
+
+if [ $result -ne 0 ]; then
+	rm -f /root/.ssh/id_rsa$4.pub
+	exit $result
+else
+	rm -f /root/.ssh/id_rsa$4.pub
+	exit 0
+fi

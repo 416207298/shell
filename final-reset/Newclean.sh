@@ -2,8 +2,8 @@
 
 # $1---deleteKeySeiralNum, $2--user, $3--IP，4--new_pub_key_num, $5---SPV'sIP, 6---rootPwd
 
-rootPwd=" "
-spvPath="/root/gitlearn/final-reset"
+spvRootPwd="62960909"
+spvPath="/home/spv/bin/pwdReset"
 if [ "$2" == "root" ];then
 	devicePath="/root/.ssh"
 else
@@ -26,7 +26,7 @@ else
 	send "scp root@$5:$spvPath/ifPubkeyExists.sh ~/.ssh\r"
 	expect {
 		"*(yes/no)?*" { send "yes\r";exp_continue }
-		"password:" { send "$rootPwd\r" }
+		"password:" { send "$spvRootPwd\r" }
 	}
 
 	expect "*]*"
@@ -35,7 +35,7 @@ else
 		"yes" {
 			send "scp root@$5:$spvPath/slash $devicePath/slash\r"
 			expect "password:"
-			send "$rootPwd\r"
+			send "$spvRootPwd\r"
 			expect "*]*"
 			send "$devicePath/slash id_rsa$1.pub $2\r"
 			expect "*]*"

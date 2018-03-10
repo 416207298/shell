@@ -2,7 +2,7 @@
 
 # $1---deleteKeySeiralNum, $2--user, $3--IP，4--new_pub_key_num, $5---SPV'sIP
 
-spvRootPwd=" "
+spvRootPwd="62960909"
 
 if [ $# -ne 5 ]; then
     echo "Five arguments are needed."
@@ -10,10 +10,17 @@ if [ $# -ne 5 ]; then
     exit
 else
 	# 删除authorized_keys中oldKey、删除oldKey、删除本地私钥,需先上传slash
-	spvPath="/root/gitlearn/final-chpwd"
+	spvPath="/home/spv/bin/chAuthKey"
 	echo executing cleaning remote server public_key...
 	expect <<- EOF
 	spawn ssh -i /root/.ssh/id_rsa$1 $2@$3
+	expect {
+		"*password*" { send "\n"; exp_continue }
+        "*try again." { exit 2 }
+        "*]*" { send "cd ~/.ssh/\r" }
+        timeout { exit 2 }
+        eof { exit 2 }	
+	}
 	expect "*]*"
 
 	send "scp root@$5:$spvPath/slash ~/.ssh/slash\r"
@@ -31,8 +38,12 @@ else
 	expect eof
 	EOF
 		
-	echo "removing local old keys(old_pk and new_pub)..."
-	rm -f /root/.ssh/id_rsa$4.pub 
-	rm -f /root/.ssh/id_rsa$1
-	echo "clean done." 
+	if [ $? -ne 0 ]; then
+		exit 2
+	else
+		echo "removing local old keys(old_pk and new_pub)..."
+		rm -f /root/.ssh/id_rsa$4.pub 
+		rm -f /root/.ssh/id_rsa$1
+		echo "clean done." 
+	fi
 fi
