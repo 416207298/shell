@@ -1,9 +1,8 @@
 #!/bin/bash
 
 key_timeStamp=$1 
-authKeyLen=$2
 expect <<- EOF
-	spawn ssh-keygen -b $authKeyLen
+	spawn ssh-keygen
 	expect "ssh/id_rsa):"
 	send "/root/.ssh/id_rsa$key_timeStamp\r"
 
