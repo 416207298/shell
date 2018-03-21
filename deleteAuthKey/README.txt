@@ -1,4 +1,4 @@
-用法：slash [公钥名] [用户名]
+用法：slash [公钥全名] [用户名]
 
 作用：在authorized_keys中删除指定的公钥
 
