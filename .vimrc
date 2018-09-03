@@ -6,6 +6,7 @@ let Tlist_Exit_OnlyWindow=1
 let Tlist_Use_Right_Window=1
 let Tlist_File_Fold_Auto_Close=1
 " F6开启/关闭左侧树形目录
+map <silent> <F5> :NERDTreeToggle<cr>
 map <silent> <F6> :NERDTreeToggle<cr>
 " F7开启/关闭paste模式
 map <silent> <F7> :set paste!<cr>
@@ -18,6 +19,8 @@ set showmatch
 set smartindent
 set ignorecase
 set hlsearch
+" 逐个字符显示搜索结果
+set incsearch
 set title
 
 autocmd InsertLeave * se nocul
@@ -25,10 +28,12 @@ autocmd InsertEnter * se cul
 syntax enable
 syntax on
 
-set tags=/root/gitlearn/trunk/tags
+"set tags=/root/gitlearn/trunk/tags
 "set tags+=/root/gitlearn/HAC/tags
-set tags+=/root/apue.3e/tags
+"set tags+=/root/apue.3e/tags
 set tags+=/root/trunk/tags
+set tags+=/root/codes/LeetCodes/tags
+set tags+=/root/codes/network/Tiny-WebServer/tags
 map <c-]> g<c-]>
 set autochdir
 
@@ -90,23 +95,29 @@ let g:ycm_global_ycm_extra_conf='~/.vim/bundle/YouCompleteMe/third_party/ycmd/cp
 let g:ycm_autoclose_preview_window_after_insertion = 1
 let g:ycm_autoclose_preview_window_after_completion = 1
 " 关闭YCM语法检查
-let g:ycm_enable_diagnostic_signs = 0
-let g:ycm_enable_diagnostic_highlighting = 0
+ let g:ycm_enable_diagnostic_signs = 0
+ let g:ycm_enable_diagnostic_highlighting = 0
+
+" Go to definition else declaration
+nnoremap <leader>jd :YcmCompleter GoToDefinitionElseDeclaration<CR>
+" 主动调用补全
+let g:ycm_key_invoke_completion = '<C-a>'
 
 set backspace=2
 " 光标停留上一次打开位置
 au BufReadPost * if line("'\"") > 0|if line("'\"") <= line("$")|exe("norm '\"")|else|exe "norm $"|endif|endif
 
 if has("multi_byte")
-    set fileencodings=utf-8,ucs-bom,cp936,cp1250,big5,euc-jp,euc-kr,latin1,gbk-2312
+    set fileencodings=utf-8,ucs-bom,cp936,cp1250,big5,euc-jp,euc-kr,latin1,gb-2312
 else
     echoerr "Sorry, this version of (g)vim was not compiled with multi_byte"
 endif
 
 
  "SET Comment START
+ "添加头注释
 
- autocmd BufNewFile *.php,*.js,*.cpp exec ":call SetComment()" |normal 10Go
+ autocmd BufNewFile *.php,*.js,*.cpp,*.c exec ":call SetComment()" |normal 10Go
  func SetComment()
  if expand("%:e") == 'php'
      call setline(1, "<?php")
@@ -114,6 +125,10 @@ endif
      call setline(1, '//JavaScript file')
  elseif expand("%:e") == 'cpp'
      call setline(1, '//C++ file')
+ elseif expand("%:e") == 'c'
+     call setline(1, '//C file')
+ elseif expand("%:e") == 'py'
+     call setline(1, '//Python file')
  endif
  call append(1, '/***********************************************')
  call append(2, '#')
@@ -123,23 +138,31 @@ endif
  call append(6, '#   Description: ---')
  call append(7, '#        Create: '.strftime("%Y-%m-%d %H:%M:%S"))
  call append(8, '#**********************************************/')
-"    call append(10, '')
+ if expand("%:e") == 'cpp'
+	 call append(9, '#include<iostream>')
+	 call append(10, 'using namespace std;')
+ elseif expand("%:e") == 'c'
+	 call append(9, '#include<stdio.h>')
+ elseif expand("%:e") == 'py'
+	 call append(9, '# -*- coding:utf-8 -*')
+ endif
 endfunc
-map <F2> :call SetComment()<CR>:1<CR>o
+" map <F2> :call SetComment()<CR>:10<CR>o
 
 "SET Comment END
 
  " 添加函数注释开始
- autocmd BufNewFile *.php,*.js,*.cpp exec ":call SetComment2()" |normal line('.')Go
+ "autocmd BufNewFile *.php,*.js,*.cpp exec ":call SetComment2()" |normal line('.')Go
  func SetComment2()
  call append(line('.'), '/***********************************************')
- call append(line('.')+1, '#')
- call append(line('.')+2, '#      函数功能:')
- call append(line('.')+3, '#')
- call append(line('.')+4, '#   Description:')
- call append(line('.')+5, '#        Create: '.strftime("%Y-%m-%d %H:%M:%S"))
- call append(line('.')+6, '#**********************************************/')
+ call append(line('.')+1, '#      函数名称:')
+ call append(line('.')+2, '#')
+ call append(line('.')+3, '#   Description:')
+ call append(line('.')+4, '#   returnValue:')
+ call append(line('.')+5, '#   	 Author: luhg')
+ call append(line('.')+6, '#        Create: '.strftime("%Y-%m-%d %H:%M:%S"))
+ call append(line('.')+7, '#**********************************************/')
 endfunc
-map <F3> :call SetComment2()<CR>o
+map <F1> :call SetComment2()<CR>
 
 " 函数注释END
