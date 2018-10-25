@@ -32,8 +32,11 @@ syntax on
 "set tags+=/root/gitlearn/HAC/tags
 "set tags+=/root/apue.3e/tags
 set tags+=/root/trunk/tags
-set tags+=/root/codes/LeetCodes/tags
+set tags+=/root/HAC/trunk/tags
+"set tags+=/root/codes/LeetCodes/tags
 set tags+=/root/codes/network/Tiny-WebServer/tags
+set tags+=/root/asv/tags
+set tags+=/root/hsm/tags
 map <c-]> g<c-]>
 set autochdir
 
@@ -107,11 +110,15 @@ set backspace=2
 " 光标停留上一次打开位置
 au BufReadPost * if line("'\"") > 0|if line("'\"") <= line("$")|exe("norm '\"")|else|exe "norm $"|endif|endif
 
+" 中文乱码解决
 if has("multi_byte")
     set fileencodings=utf-8,ucs-bom,cp936,cp1250,big5,euc-jp,euc-kr,latin1,gb-2312
 else
     echoerr "Sorry, this version of (g)vim was not compiled with multi_byte"
 endif
+" set fileencodings=utf-8,ucs-bom,gb18030,gbk,gb2312,cp936
+" set termencoding=utf-8
+" set encoding=utf-8
 
 
  "SET Comment START
@@ -158,10 +165,11 @@ endfunc
  call append(line('.')+1, '#      函数名称:')
  call append(line('.')+2, '#')
  call append(line('.')+3, '#   Description:')
- call append(line('.')+4, '#   returnValue:')
- call append(line('.')+5, '#   	 Author: luhg')
- call append(line('.')+6, '#        Create: '.strftime("%Y-%m-%d %H:%M:%S"))
- call append(line('.')+7, '#**********************************************/')
+ call append(line('.')+4, '#     parameter:')
+ call append(line('.')+5, '#   returnValue:')
+ call append(line('.')+6, '#   	 Author: luhg')
+ call append(line('.')+7, '#        Create: '.strftime("%Y-%m-%d %H:%M:%S"))
+ call append(line('.')+8, '#**********************************************/')
 endfunc
 map <F1> :call SetComment2()<CR>
 
